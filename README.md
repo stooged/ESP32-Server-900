@@ -2,7 +2,7 @@
 
 This is a project designed for the <a href=https://www.wemos.cc/en/latest/d32/d32.html>ESP32</a> or the <a href=https://www.wemos.cc/en/latest/d32/d32_pro.html>ESP32 PRO</a> to provide a wifi http server and dns server.
 
-the project is built using <b>ESPAsyncWebServer</b> and <b>AsyncTCP</b> so you need to add the libraries to arduino
+the project is built using <b><a href=https://github.com/me-no-dev/ESPAsyncWebServer>ESPAsyncWebServer</a></b> and <b><a href=https://github.com/me-no-dev/AsyncTCP>AsyncTCP</a></b> so you need to add these libraries to arduino
 
 <a href=https://github.com/me-no-dev/ESPAsyncWebServer>ESPAsyncWebServer</a><br>
 <a href=https://github.com/me-no-dev/AsyncTCP>AsyncTCP</a><br>
@@ -54,7 +54,7 @@ on the side menu of the admin page select <b>File Uploader</b> and then click <b
 you can then goto <b>Config Editor</b> and change the password for the wifi ap.
 
 
-alternatively if you install this plugin to the arduino ide you can upload the files to the esp32 with the arduino ide by selecting <b>Tools > ESP32 Sketch Data Upload</b>
+alternatively if you install this <a href=https://github.com/me-no-dev/arduino-esp32fs-plugin/>plugin</a> to the arduino ide you can upload the files to the esp32 with the arduino ide by selecting <b>Tools > ESP32 Sketch Data Upload</b>
 
 <a href=https://github.com/me-no-dev/arduino-esp32fs-plugin/>Arduino ESP32 filesystem uploader</a>
 
