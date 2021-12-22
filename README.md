@@ -1,4 +1,4 @@
-# PS4 Server 9.00
+# ESP32 Server 9.00
 
 This is a project designed for the <a href=https://www.wemos.cc/en/latest/d32/d32.html>ESP32</a> or the <a href=https://www.wemos.cc/en/latest/d32/d32_pro.html>ESP32 PRO</a> to provide a wifi http server and dns server.
 
