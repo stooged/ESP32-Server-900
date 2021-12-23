@@ -13,6 +13,8 @@ this is for the 9.00 exploit and the esp32, the payloads are all single file for
 
 the exploit files and payloads will be cached on first load which will allow full offline operation of the exploit, you will still need to plug in the usb drive manually but the ESP32 will not be required in offline mode.
 
+it will handle usb control which will require you to define the pin you want to use and then use the html data from the <a href=https://github.com/stooged/PS4-Server-900u/tree/main/PS4_Server_900u/data>PS4 Server 900u</a> repo.
+
 the firmware is updatable via http and the exploit files can be managed via http.
 
 you can access the main page from the userguide or the consoles webbrowser.
