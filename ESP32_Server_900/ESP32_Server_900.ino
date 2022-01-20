@@ -4,7 +4,8 @@
 #include "SPIFFS.h"
 #include <DNSServer.h>
 #include <Update.h>
-
+#include "Loader.h"
+#include "Pages.h"
 
 #define usbPin 6  // set the pin you want to use for usb control
 
@@ -58,6 +59,40 @@ String formatBytes(size_t bytes){
   }
 }
 
+
+String urlencode(String str)
+{
+    String encodedString="";
+    char c;
+    char code0;
+    char code1;
+    char code2;
+    for (int i =0; i < str.length(); i++){
+      c=str.charAt(i);
+      if (c == ' '){
+        encodedString+= '+';
+      } else if (isalnum(c)){
+        encodedString+=c;
+      } else{
+        code1=(c & 0xf)+'0';
+        if ((c & 0xf) >9){
+            code1=(c & 0xf) - 10 + 'A';
+        }
+        c=(c>>4)&0xf;
+        code0=c+'0';
+        if (c > 9){
+            code0=c - 10 + 'A';
+        }
+        code2='\0';
+        encodedString+='%';
+        encodedString+=code0;
+        encodedString+=code1;
+      }
+      yield();
+    }
+    encodedString.replace("%2E",".");
+    return encodedString;
+}
 
 
 String getContentType(String filename){
@@ -115,7 +150,7 @@ void handleFwUpdate(AsyncWebServerRequest *request, String filename, size_t inde
       if (!filename.startsWith("/")) {
         filename = "/" + filename;
       }
-      Serial.printf("Update Start: %s\n", filename.c_str());
+      //Serial.printf("Update Start: %s\n", filename.c_str());
       if(!Update.begin((ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000)){
         Update.printError(Serial);
         sendwebmsg(request, "Update Failed: " + String(Update.errorString()));
@@ -129,7 +164,7 @@ void handleFwUpdate(AsyncWebServerRequest *request, String filename, size_t inde
     }
     if(final){
       if(Update.end(true)){
-        Serial.printf("Update Success: %uB\n", index+len);
+        //Serial.printf("Update Success: %uB\n", index+len);
         String tmphtm = "<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"8; url=/info.html\"><style>body { background-color: #1451AE;color: #ffffff;font-size: 14px; font-weight: bold; margin: 0 0 0 0.0; padding: 0.4em 0.4em 0.4em 0.6em;}</style></head><center><br><br><br><br><br><br>Update Success, Rebooting.</center></html>";
         request->send(200, "text/html", tmphtm);
         delay(1000);
@@ -187,8 +222,9 @@ void handleFileMan(AsyncWebServerRequest *request) {
 
 void handlePayloads(AsyncWebServerRequest *request) {
   File dir = SPIFFS.open("/");
-  String output = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>PS4 Server</title><style>.btn {background-color: DodgerBlue; border: none; color: white; padding: 12px 16px; font-size: 16px; cursor: pointer; font-weight: bold;}.btn:hover {background-color: RoyalBlue;}body {background-color: #1451AE; color: #ffffff; text-shadow: 3px 2px DodgerBlue;)</style></head><body><center><h1>PS4 Payloads</h1>";
+  String output = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>ESP Server</title><script>function setpayload(payload,title){ sessionStorage.setItem('payload', payload); sessionStorage.setItem('title', title); window.open('loader.html', '_self');}</script><style>.btn { background-color: DodgerBlue; border: none; color: white; padding: 12px 16px; font-size: 16px; cursor: pointer; font-weight: bold;}.btn:hover { background-color: RoyalBlue;}body { background-color: #1451AE; color: #ffffff; font-size: 14px; font-weight: bold; margin: 0 0 0 0.0; overflow-y:hidden; text-shadow: 3px 2px DodgerBlue;} .main { padding: 0px 0px; position: absolute; top: 0; right: 0; bottom: 0; left: 0; overflow-y:hidden;}</style></head><body><center><h1>9.00 Payloads</h1>";
   int cntr = 0;
+  int payloadCount = 0;
   File file = dir.openNextFile();
   while(file){
     String fname = String(file.name());
@@ -197,21 +233,26 @@ void handlePayloads(AsyncWebServerRequest *request) {
       if (fname.endsWith(".gz")) {
         fname = fname.substring(0, fname.length() - 3);
       }
-    if (fname.endsWith(".html") && fname != "index.html" && fname != "payloads.html" && fname != "menu.html")
+    if (fname.endsWith(".bin"))
     {
-    String fnamev = fname;
-    fnamev.replace(".html","");
-    output +=  "<a href='" +  fname + "'><button class='btn'>" + fnamev  + "</button></a>&nbsp;";
-     cntr++;
-     if (cntr == 3)
-     {
-      cntr = 0;
-      output +=  "<p></p>";
+      payloadCount++;
+      String fnamev = fname;
+      fnamev.replace(".bin","");
+      output +=  "<a onclick=\"setpayload('" + urlencode(fname) + "','" + fnamev + "')\"><button class=\"btn\">" + fnamev + "</button></a>&nbsp;";
+      cntr++;
+      if (cntr == 3)
+      {
+        cntr = 0;
+        output +=  "<p></p>";
       }
     }
     }
     file.close();
     file = dir.openNextFile();
+  }
+  if (payloadCount == 0)
+  {
+      output += "No .bin payloads found<br>You need to upload the payloads to the ESP32 board.<br>in the arduino ide select <b>Tools</b> &gt; <b>ESP32 Sketch Data Upload</b></center></body></html>";
   }
   output += "</center></body></html>";
   request->send(200, "text/html", output);
@@ -245,7 +286,7 @@ void handleConfig(AsyncWebServerRequest *request)
 
 void handleReboot(AsyncWebServerRequest *request)
 {
-  Serial.print("Rebooting ESP");
+  //Serial.print("Rebooting ESP");
   String htmStr = "<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"8; url=/info.html\"><style type=\"text/css\">#loader {  z-index: 1;   width: 50px;   height: 50px;   margin: 0 0 0 0;   border: 6px solid #f3f3f3;   border-radius: 50%;   border-top: 6px solid #3498db;   width: 50px;   height: 50px;   -webkit-animation: spin 2s linear infinite;   animation: spin 2s linear infinite; } @-webkit-keyframes spin {  0%  {  -webkit-transform: rotate(0deg);  }  100% {  -webkit-transform: rotate(360deg); }}@keyframes spin {  0% { transform: rotate(0deg); }  100% { transform: rotate(360deg); }} body { background-color: #1451AE; color: #ffffff; font-size: 20px; font-weight: bold; margin: 0 0 0 0.0; padding: 0.4em 0.4em 0.4em 0.6em;}   #msgfmt { font-size: 16px; font-weight: normal;}#status { font-size: 16px;  font-weight: normal;}</style></head><center><br><br><br><br><br><p id=\"status\"><div id='loader'></div><br>Rebooting</p></center></html>";
   request->send(200, "text/html", htmStr);
   delay(1000);
@@ -286,7 +327,7 @@ void handleFileUpload(AsyncWebServerRequest *request, String filename, size_t in
       }
       if (filename.equals("/config.ini"))
       {return;}
-      Serial.printf("Upload Start: %s\n", filename.c_str());
+      //Serial.printf("Upload Start: %s\n", filename.c_str());
       upFile = SPIFFS.open(filename, "w");
       }
     if(upFile){
@@ -294,7 +335,7 @@ void handleFileUpload(AsyncWebServerRequest *request, String filename, size_t in
     }
     if(final){
         upFile.close();
-        Serial.printf("upload Success: %uB\n", index+len);
+        //Serial.printf("upload Success: %uB\n", index+len);
     }
 }
 
@@ -361,13 +402,31 @@ void handleCacheManifest(AsyncWebServerRequest *request) {
       if (fname.endsWith(".gz")) {
         fname = fname.substring(0, fname.length() - 3);
       }
-     output += fname + "\r\n";
+     output += urlencode(fname) + "\r\n";
     }
      file.close();
      file = dir.openNextFile();
   }
+  if(!instr(output,"index.html\r\n"))
+  {
+    output += "index.html\r\n";
+  }
+  if(!instr(output,"menu.html\r\n"))
+  {
+    output += "menu.html\r\n";
+  }
+  if(!instr(output,"loader.html\r\n"))
+  {
+    output += "loader.html\r\n";
+  }
+  if(!instr(output,"payloads.html\r\n"))
+  {
+    output += "payloads.html\r\n";
+  }
    request->send(200, "text/cache-manifest", output);
 }
+
+
 
 
 void writeConfig()
@@ -382,8 +441,8 @@ void writeConfig()
 
 void setup(){
   digitalWrite(usbPin, LOW);
-  Serial.begin(115200);
-  Serial.println("Version: " + firmwareVer);
+  //Serial.begin(115200);
+  //Serial.println("Version: " + firmwareVer);
   if (SPIFFS.begin()) {
   if (SPIFFS.exists("/config.ini")) {
   File iniFile = SPIFFS.open("/config.ini", "r");
@@ -429,19 +488,19 @@ void setup(){
   }
   else
   {
-    Serial.println("No SPIFFS");
+    //Serial.println("No SPIFFS");
   }
 
 
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(Server_IP, Server_IP, Subnet_Mask);
   WiFi.softAP(AP_SSID.c_str(), AP_PASS.c_str());
-  Serial.println("WIFI AP started");
+  //Serial.println("WIFI AP started");
 
   dnsServer.setTTL(30);
   dnsServer.setErrorReplyCode(DNSReplyCode::ServerFailure);
   dnsServer.start(53, "*", Server_IP);
-  Serial.println("DNS server started");
+  //Serial.println("DNS server started");
 
 
   server.on("/connecttest.txt", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -509,11 +568,11 @@ void setup(){
      request->send(200, "text/plain", "ok");
   });
 
-  
+
   server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
 
   server.onNotFound([](AsyncWebServerRequest *request){
-    Serial.println(request->url());
+    //Serial.println(request->url());
     String path = request->url();
     if (instr(path,"/update/ps4/"))
     {
@@ -521,29 +580,45 @@ void setup(){
         handleConsoleUpdate(Region, request);
         return;
     }
-    if (instr(path,"/document/"))
-    {
+
+     if (path.endsWith("index.html") || path.endsWith("index.htm") || path.endsWith("/"))
+     {
+        request->send(200, "text/html", indexData);
+        return;
+     }
+     if (path.endsWith("menu.html"))
+     {
+        request->send(200, "text/html", menuData);
+        return;
+     }
+     if (path.endsWith("payloads.html"))
+     {
+        handlePayloads(request);
+        return;
+     }
+     if (path.endsWith("loader.html"))
+     {
+        request->send(200, "text/html", loaderData);
+        return;
+     }    
+      if (instr(path,"/document/") && instr(path,"/ps4/"))
+      {
         path.replace("/document/" + split(path,"/document/","/ps4/") + "/ps4/", "/");
         if (path.endsWith("cache.manifest"))
         {
           handleCacheManifest(request);
           return;
         }
-        request->send(SPIFFS, path, getContentType(path));
+          request->send(SPIFFS, path, getContentType(path));
         return;
-    }
-    if (path.endsWith("/index.html"))
-    {
-        handlePayloads(request);
-        return;
-    }
+      }
     request->send(404);
   });
 
 
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
   server.begin();
-  Serial.println("HTTP server started");
+  //Serial.println("HTTP server started");
 }
  
 void loop(){
