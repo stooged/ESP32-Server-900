@@ -15,6 +15,8 @@ the only files now required on the spiffs storage of the esp32 are the .bin payl
 
 you can still modify the html by uploading your own index.html, if there is no index.html on the spiffs storage the internal pages will be used.
 
+if you have problems compiling the sketch make sure the <a href=https://github.com/espressif/arduino-esp32>ESP32 library</a> is up to date.
+
 the exploit files and payloads will be cached on first load which will allow full offline operation of the exploit, you will still need to plug in the usb drive manually but the ESP32 will not be required in offline mode.
 
 the firmware is updatable via http and the exploit files can be managed via http.
