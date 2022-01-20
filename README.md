@@ -9,11 +9,13 @@ the project is built using <b><a href=https://github.com/me-no-dev/ESPAsyncWebSe
 
 <br>
 
-this is for the 9.00 exploit and the esp32, the payloads are all single file format (.html) generated with <a href=https://github.com/stooged/bin2html-900>bin2html 900</a> which removes the need for binloader.
+this is for the 9.00 exploit and the esp32.
+
+the only files now required on the spiffs storage of the esp32 are the .bin payloads, everything else is handled internally including generating a list of payloads.
+
+you can still modify the html by uploading your own index.html, if there is no index.html on the spiffs storage the internal pages will be used.
 
 the exploit files and payloads will be cached on first load which will allow full offline operation of the exploit, you will still need to plug in the usb drive manually but the ESP32 will not be required in offline mode.
-
-it will handle usb control which will require you to define the pin you want to use and then use the html data from the <a href=https://github.com/stooged/PS4-Server-900u/tree/main/PS4_Server_900u/data>PS4 Server 900u</a> repo, there is no offline cache for this method as the esp32 is required to control the usb.
 
 the firmware is updatable via http and the exploit files can be managed via http.
 
