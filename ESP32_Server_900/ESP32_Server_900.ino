@@ -7,7 +7,7 @@
 #include "Loader.h"
 #include "Pages.h"
 
-#define usbPin 6  // set the pin you want to use for usb control
+#define usbPin 4  // set the pin you want to use for usb control
 
 String AP_SSID = "PS4_WEB_AP";
 String AP_PASS = "password";
@@ -440,6 +440,7 @@ void writeConfig()
 
 
 void setup(){
+  pinMode(usbPin, OUTPUT); 
   digitalWrite(usbPin, LOW);
   //Serial.begin(115200);
   //Serial.println("Version: " + firmwareVer);
