@@ -444,7 +444,7 @@ void setup(){
   digitalWrite(usbPin, LOW);
   //Serial.begin(115200);
   //Serial.println("Version: " + firmwareVer);
-  if (SPIFFS.begin()) {
+  if (SPIFFS.begin(true)) {
   if (SPIFFS.exists("/config.ini")) {
   File iniFile = SPIFFS.open("/config.ini", "r");
   if (iniFile) {
