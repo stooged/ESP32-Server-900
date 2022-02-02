@@ -601,7 +601,19 @@ void setup(){
      {
         request->send(200, "text/html", loaderData);
         return;
-     }    
+     }
+     if (path.endsWith("usbon"))
+     {
+        enableUSB();
+        request->send(200, "text/plain", "ok");
+        return;
+     }
+     if (path.endsWith("usboff"))
+     {
+        disableUSB();
+        request->send(200, "text/plain", "ok");
+        return;
+     }
       if (instr(path,"/document/") && instr(path,"/ps4/"))
       {
         path.replace("/document/" + split(path,"/document/","/ps4/") + "/ps4/", "/");
