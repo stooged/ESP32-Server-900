@@ -4,10 +4,13 @@
 #include "SPIFFS.h"
 #include <DNSServer.h>
 #include <Update.h>
-#include "Loader.h"
-#include "Pages.h"
 
+#define AUTOUSB false // set to true if you are using usb control
 #define usbPin 4  // set the pin you want to use for usb control
+
+#include "Pages.h"
+#include "Loader.h"
+
 
 String AP_SSID = "PS4_WEB_AP";
 String AP_PASS = "password";
@@ -143,7 +146,7 @@ void handleFwUpdate(AsyncWebServerRequest *request, String filename, size_t inde
         request->send(500, "text/plain", "Internal Server Error");
         return;
       }
-      if (!filename.equals("fwupdate32.bin")) {
+      if (!filename.equals("fwupdate.bin")) {
         sendwebmsg(request, "Invalid update file: " + filename);
         return;
       }
@@ -392,6 +395,7 @@ void handleInfo(AsyncWebServerRequest *request)
 
 
 void handleCacheManifest(AsyncWebServerRequest *request) {
+  #if AUTOUSB
   String output = "CACHE MANIFEST\r\n";
   File dir = SPIFFS.open("/");
   File file = dir.openNextFile();
@@ -424,8 +428,10 @@ void handleCacheManifest(AsyncWebServerRequest *request) {
     output += "payloads.html\r\n";
   }
    request->send(200, "text/cache-manifest", output);
+  #else
+   request->send(404);
+  #endif
 }
-
 
 
 
