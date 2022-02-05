@@ -395,7 +395,7 @@ void handleInfo(AsyncWebServerRequest *request)
 
 
 void handleCacheManifest(AsyncWebServerRequest *request) {
-  #if AUTOUSB
+  #if !AUTOUSB
   String output = "CACHE MANIFEST\r\n";
   File dir = SPIFFS.open("/");
   File file = dir.openNextFile();
