@@ -1,5 +1,10 @@
 # ESP32 Server 9.00
 
+
+<b>if you do not want to have to insert usb drives or wire things up then use <a href=https://github.com/stooged/ESP32-Server-900u>ESP32-Server-900u</a> and a ESP32-s2 board.</b>
+
+<br><br>
+
 This is a project designed for the <a href=https://www.wemos.cc/en/latest/d32/d32.html>ESP32</a> or the <a href=https://www.wemos.cc/en/latest/d32/d32_pro.html>ESP32 PRO</a> to provide a wifi http server and dns server.
 
 the project is built using <b><a href=https://github.com/me-no-dev/ESPAsyncWebServer>ESPAsyncWebServer</a></b> and <b><a href=https://github.com/me-no-dev/AsyncTCP>AsyncTCP</a></b> so you need to add these libraries to arduino
