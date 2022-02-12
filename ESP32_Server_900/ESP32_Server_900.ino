@@ -3,20 +3,50 @@
 #include "ESPAsyncWebServer.h"
 #include "SPIFFS.h"
 #include <DNSServer.h>
+#include <ESPmDNS.h>
 #include <Update.h>
 
-#define AUTOUSB false // set to true if you are using usb control
+#define USBCONTROL false // set to true if you are using usb control
 #define usbPin 4  // set the pin you want to use for usb control
+
+
+                    // enable internal goldhen.h [ true / false ]
+#define INTHEN true // goldhen is placed in the app partition to free up space on the storage for other payloads.
+                    // with this enabled you do not upload goldhen to the board, set this to false if you wish to upload goldhen.
+
+                      // enable autohen [ true / false ]
+#define AUTOHEN false // this will load goldhen instead of the normal index/payload selection page, use this if you only want hen and no other payloads.
+                      // INTHEN must be set to true for this to work.
 
 #include "Pages.h"
 #include "Loader.h"
 
+#if INTHEN
+#include "goldhen.h"
+#endif
 
+//-------------------DEFAULT SETTINGS------------------//
+
+//create access point
+boolean startAP = true;
 String AP_SSID = "PS4_WEB_AP";
 String AP_PASS = "password";
-int WEB_PORT = 80;
 IPAddress Server_IP(10,1,1,1);
 IPAddress Subnet_Mask(255,255,255,0);
+
+//connect to wifi
+boolean connectWifi = false;
+String WIFI_SSID = "Home_WIFI";
+String WIFI_PASS = "password";
+String WIFI_HOSTNAME = "ps4.local";
+
+//server port
+int WEB_PORT = 80;
+
+//Auto Usb Wait(milliseconds)
+int USB_WAIT = 10000;
+//-----------------------------------------------------//
+
 
 String firmwareVer = "1.00";
 DNSServer dnsServer;
@@ -201,22 +231,27 @@ void handleDelete(AsyncWebServerRequest *request){
 
 void handleFileMan(AsyncWebServerRequest *request) {
   File dir = SPIFFS.open("/");
-  String output = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>File Manager</title><style type=\"text/css\">a:link {color: #ffffff; text-decoration: none;} a:visited {color: #ffffff; text-decoration: none;} a:hover {color: #ffffff; text-decoration: underline;} a:active {color: #ffffff; text-decoration: underline;} table {font-family: arial, sans-serif; border-collapse: collapse; width: 100%;} td, th {border: 1px solid #dddddd; text-align: left; padding: 8px;} button {display: inline-block; padding: 1px; margin-right: 6px; vertical-align: top; float:left;} body {background-color: #1451AE;color: #ffffff; font-size: 14px; padding: 0.4em 0.4em 0.4em 0.6em; margin: 0 0 0 0.0;}</style><script>function statusDel(fname) {var answer = confirm(\"Are you sure you want to delete \" + fname + \" ?\");if (answer) {return true;} else { return false; }}</script></head><body><br><table>"; 
+  String output = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>File Manager</title><link rel=\"stylesheet\" href=\"style.css\"><style>body{overflow-y:auto;}</style><script>function statusDel(fname) {var answer = confirm(\"Are you sure you want to delete \" + fname + \" ?\");if (answer) {return true;} else { return false; }}</script></head><body><br><table>"; 
+  int fileCount = 0;
   File file = dir.openNextFile();
   while(file){
-  
     String fname = String(file.name());
     if (fname.length() > 0 && !fname.equals("config.ini"))
     {
+    fileCount++;
     output += "<tr>";
     output += "<td><a href=\"" +  fname + "\">" + fname + "</a></td>";
     output += "<td>" + formatBytes(file.size()) + "</td>";
-    output += "<td><form action=\"/" + fname + "?download=1\" method=\"post\"><button type=\"submit\" name=\"file\" value=\"" + fname + "\">Download</button></form></td>";
+    output += "<td><a href=\"/" + fname + "\" download><button type=\"submit\">Download</button></a></td>";
     output += "<td><form action=\"/delete\" method=\"post\"><button type=\"submit\" name=\"file\" value=\"" + fname + "\" onClick=\"return statusDel('" + fname + "');\">Delete</button></form></td>";
     output += "</tr>";
     }
     file.close();
     file = dir.openNextFile();
+  }
+  if (fileCount == 0)
+  {
+      output += "<p><center>No files found<br>You can upload files using the <a href=\"/upload.html\" target=\"mframe\"><u>File Uploader</u></a> page.</center></p>";
   }
   output += "</table></body></html>";
   request->send(200, "text/html", output);
@@ -225,23 +260,30 @@ void handleFileMan(AsyncWebServerRequest *request) {
 
 void handlePayloads(AsyncWebServerRequest *request) {
   File dir = SPIFFS.open("/");
-  String output = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>ESP Server</title><script>function setpayload(payload,title){ sessionStorage.setItem('payload', payload); sessionStorage.setItem('title', title); window.open('loader.html', '_self');}</script><style>.btn { background-color: DodgerBlue; border: none; color: white; padding: 12px 16px; font-size: 16px; cursor: pointer; font-weight: bold;}.btn:hover { background-color: RoyalBlue;}body { background-color: #1451AE; color: #ffffff; font-size: 14px; font-weight: bold; margin: 0 0 0 0.0; overflow-y:hidden; text-shadow: 3px 2px DodgerBlue;} .main { padding: 0px 0px; position: absolute; top: 0; right: 0; bottom: 0; left: 0; overflow-y:hidden;}</style></head><body><center><h1>9.00 Payloads</h1>";
+  String output = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>ESP Server</title><link rel=\"stylesheet\" href=\"style.css\"><style>body { background-color: #1451AE; color: #ffffff; font-size: 14px; font-weight: bold; margin: 0 0 0 0.0; overflow-y:hidden; text-shadow: 3px 2px DodgerBlue;}</style><script>function setpayload(payload,title,waittime){ sessionStorage.setItem('payload', payload); sessionStorage.setItem('title', title); sessionStorage.setItem('waittime', waittime);  window.open('loader.html', '_self');}</script></head><body><center><h1>9.00 Payloads</h1>";
   int cntr = 0;
   int payloadCount = 0;
+  if (USB_WAIT < 5000){USB_WAIT = 5000;} // correct unrealistic timing values
+  if (USB_WAIT > 25000){USB_WAIT = 25000;}
+
+#if INTHEN
+  payloadCount++;
+  cntr++;
+  output +=  "<a onclick=\"setpayload('gldhen.bin','" + String(INTHEN_NAME) + "','" + String(USB_WAIT) + "')\"><button class=\"btn\">" + String(INTHEN_NAME) + "</button></a>&nbsp;";
+#endif
+
   File file = dir.openNextFile();
   while(file){
     String fname = String(file.name());
-    if (fname.length() > 0)
-    {
-      if (fname.endsWith(".gz")) {
+    if (fname.endsWith(".gz")) {
         fname = fname.substring(0, fname.length() - 3);
-      }
-    if (fname.endsWith(".bin"))
+    }
+    if (fname.length() > 0 && fname.endsWith(".bin"))
     {
       payloadCount++;
       String fnamev = fname;
       fnamev.replace(".bin","");
-      output +=  "<a onclick=\"setpayload('" + urlencode(fname) + "','" + fnamev + "')\"><button class=\"btn\">" + fnamev + "</button></a>&nbsp;";
+      output +=  "<a onclick=\"setpayload('" + urlencode(fname) + "','" + fnamev + "','" + String(USB_WAIT) + "')\"><button class=\"btn\">" + fnamev + "</button></a>&nbsp;";
       cntr++;
       if (cntr == 3)
       {
@@ -249,13 +291,12 @@ void handlePayloads(AsyncWebServerRequest *request) {
         output +=  "<p></p>";
       }
     }
-    }
     file.close();
     file = dir.openNextFile();
   }
   if (payloadCount == 0)
   {
-      output += "No .bin payloads found<br>You need to upload the payloads to the ESP32 board.<br>in the arduino ide select <b>Tools</b> &gt; <b>ESP32 Sketch Data Upload</b></center></body></html>";
+      output += "<msg>No .bin payloads found<br>You need to upload the payloads to the ESP32 board.<br>in the arduino ide select <b>Tools</b> &gt; <b>ESP32 Sketch Data Upload</b><br>or<br>Using a pc/laptop connect to <b>" + AP_SSID + "</b> and navigate to <a href=\"/admin.html\"><u>http://" + WIFI_HOSTNAME + "/admin.html</u></a> and upload the .bin payloads using the <b>File Uploader</b></msg></center></body></html>";
   }
   output += "</center></body></html>";
   request->send(200, "text/html", output);
@@ -264,58 +305,64 @@ void handlePayloads(AsyncWebServerRequest *request) {
 
 void handleConfig(AsyncWebServerRequest *request)
 {
-  if(request->hasParam("ap_ssid", true) && request->hasParam("ap_pass", true) && request->hasParam("web_ip", true) && request->hasParam("subnet", true)) 
+  if(request->hasParam("ap_ssid", true) && request->hasParam("ap_pass", true) && request->hasParam("web_ip", true) && request->hasParam("web_port", true) && request->hasParam("subnet", true) && request->hasParam("wifi_ssid", true) && request->hasParam("wifi_pass", true) && request->hasParam("wifi_host", true) && request->hasParam("usbwait", true)) 
   {
     AP_SSID = request->getParam("ap_ssid", true)->value();
-    AP_PASS = request->getParam("ap_pass", true)->value();
+    if (!request->getParam("ap_pass", true)->value().equals("********"))
+    {
+      AP_PASS = request->getParam("ap_pass", true)->value();
+    }
+    WIFI_SSID = request->getParam("wifi_ssid", true)->value();
+    if (!request->getParam("wifi_pass", true)->value().equals("********"))
+    {
+      WIFI_PASS = request->getParam("wifi_pass", true)->value();
+    }
     String tmpip = request->getParam("web_ip", true)->value();
+    String tmpwport = request->getParam("web_port", true)->value();
     String tmpsubn = request->getParam("subnet", true)->value();
+    String WIFI_HOSTNAME = request->getParam("wifi_host", true)->value();
+    String tmpua = "false";
+    String tmpcw = "false";
+    if (request->hasParam("useap", true)){tmpua = "true";}
+    if (request->hasParam("usewifi", true)){tmpcw = "true";}
+    int USB_WAIT = request->getParam("usbwait", true)->value().toInt();
     File iniFile = SPIFFS.open("/config.ini", "w");
     if (iniFile) {
-    iniFile.print("\r\nSSID=" + AP_SSID + "\r\nPASSWORD=" + AP_PASS + "\r\n\r\nWEBSERVER_IP=" + tmpip + "\r\n\r\nSUBNET_MASK=" + tmpsubn + "\r\n");
+    iniFile.print("\r\nAP_SSID=" + AP_SSID + "\r\nAP_PASS=" + AP_PASS + "\r\nWEBSERVER_IP=" + tmpip + "\r\nWEBSERVER_PORT=" + tmpwport + "\r\nSUBNET_MASK=" + tmpsubn + "\r\nWIFI_SSID=" + WIFI_SSID + "\r\nWIFI_PASS=" + WIFI_PASS + "\r\nWIFI_HOST=" + WIFI_HOSTNAME + "\r\nUSEAP=" + tmpua + "\r\nCONWIFI=" + tmpcw + "\r\nUSBWAIT=" + USB_WAIT + "\r\n");
     iniFile.close();
     }
-    String htmStr = "<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"8; url=/info.html\"><style type=\"text/css\">#loader {  z-index: 1;   width: 50px;   height: 50px;   margin: 0 0 0 0;   border: 6px solid #f3f3f3;   border-radius: 50%;   border-top: 6px solid #3498db;   width: 50px;   height: 50px;   -webkit-animation: spin 2s linear infinite;   animation: spin 2s linear infinite; } @-webkit-keyframes spin {  0%  {  -webkit-transform: rotate(0deg);  }  100% {  -webkit-transform: rotate(360deg); }}@keyframes spin {  0% { transform: rotate(0deg); }  100% { transform: rotate(360deg); }} body { background-color: #1451AE; color: #ffffff; font-size: 20px; font-weight: bold; margin: 0 0 0 0.0; padding: 0.4em 0.4em 0.4em 0.6em;}   #msgfmt { font-size: 16px; font-weight: normal;}#status { font-size: 16px;  font-weight: normal;}</style></head><center><br><br><br><br><br><p id=\"status\"><div id='loader'></div><br>Config saved<br>Rebooting</p></center></html>";
+    String htmStr = "<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"8; url=/info.html\"><style type=\"text/css\">#loader {z-index: 1;width: 50px;height: 50px;margin: 0 0 0 0;border: 6px solid #f3f3f3;border-radius: 50%;border-top: 6px solid #3498db;width: 50px;height: 50px;-webkit-animation: spin 2s linear infinite;animation: spin 2s linear infinite; } @-webkit-keyframes spin {0%{-webkit-transform: rotate(0deg);}100%{-webkit-transform: rotate(360deg);}}@keyframes spin{0%{ transform: rotate(0deg);}100%{transform: rotate(360deg);}}body {background-color: #1451AE; color: #ffffff; font-size: 20px; font-weight: bold; margin: 0 0 0 0.0; padding: 0.4em 0.4em 0.4em 0.6em;} #msgfmt {font-size: 16px; font-weight: normal;}#status {font-size: 16px; font-weight: normal;}</style></head><center><br><br><br><br><br><p id=\"status\"><div id='loader'></div><br>Config saved<br>Rebooting</p></center></html>";
     request->send(200, "text/html", htmStr);
     delay(1000);
     ESP.restart();
   }
   else
   {
-    request->redirect("/config.html"); 
+   request->redirect("/config.html");
   }
 }
 
 
 void handleReboot(AsyncWebServerRequest *request)
 {
-  //Serial.print("Rebooting ESP");
-  String htmStr = "<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"8; url=/info.html\"><style type=\"text/css\">#loader {  z-index: 1;   width: 50px;   height: 50px;   margin: 0 0 0 0;   border: 6px solid #f3f3f3;   border-radius: 50%;   border-top: 6px solid #3498db;   width: 50px;   height: 50px;   -webkit-animation: spin 2s linear infinite;   animation: spin 2s linear infinite; } @-webkit-keyframes spin {  0%  {  -webkit-transform: rotate(0deg);  }  100% {  -webkit-transform: rotate(360deg); }}@keyframes spin {  0% { transform: rotate(0deg); }  100% { transform: rotate(360deg); }} body { background-color: #1451AE; color: #ffffff; font-size: 20px; font-weight: bold; margin: 0 0 0 0.0; padding: 0.4em 0.4em 0.4em 0.6em;}   #msgfmt { font-size: 16px; font-weight: normal;}#status { font-size: 16px;  font-weight: normal;}</style></head><center><br><br><br><br><br><p id=\"status\"><div id='loader'></div><br>Rebooting</p></center></html>";
-  request->send(200, "text/html", htmStr);
+  //HWSerial.print("Rebooting ESP");
+  request->send(200, "text/html", rebootingData);
   delay(1000);
   ESP.restart();
 }
 
 
+
 void handleConfigHtml(AsyncWebServerRequest *request)
 {
-  String htmStr = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Config Editor</title><style type=\"text/css\">body {    background-color: #1451AE; color: #ffffff; font-size: 14px;  font-weight: bold;    margin: 0 0 0 0.0;    padding: 0.4em 0.4em 0.4em 0.6em;}  input[type=\"submit\"]:hover {     background: #ffffff;    color: green; }input[type=\"submit\"]:active {     outline-color: green;    color: green;    background: #ffffff; }table {    font-family: arial, sans-serif;     border-collapse: collapse;}td, th {border: 1px solid #dddddd;     text-align: left;    padding: 8px;}</style></head><body><form action=\"/config.html\" method=\"post\"><center><table><tr><td>SSID:</td><td><input name=\"ap_ssid\" value=\"" + AP_SSID + "\"></td></tr><tr><td>PASSWORD:</td><td><input name=\"ap_pass\" value=\"" + AP_PASS + "\"></td></tr><tr><td>WEBSERVER IP:</td><td><input name=\"web_ip\" value=\"" + Server_IP.toString() + "\"></td></tr><tr><td>SUBNET MASK:</td><td><input name=\"subnet\" value=\"" + Subnet_Mask.toString() + "\"></td></tr></table><br><input id=\"savecfg\" type=\"submit\" value=\"Save Config\"></center></form></body></html>";
+  String tmpUa = "";
+  String tmpCw = "";
+  if (startAP){tmpUa = "checked";}
+  if (connectWifi){tmpCw = "checked";}
+  String htmStr = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Config Editor</title><style type=\"text/css\">body {background-color: #1451AE; color: #ffffff; font-size: 14px;font-weight: bold;margin: 0 0 0 0.0;padding: 0.4em 0.4em 0.4em 0.6em;}input[type=\"submit\"]:hover {background: #ffffff;color: green;}input[type=\"submit\"]:active{outline-color: green;color: green;background: #ffffff; }table {font-family: arial, sans-serif;border-collapse: collapse;}td {border: 1px solid #dddddd;text-align: left;padding: 8px;}th {border: 1px solid #dddddd; background-color:gray;text-align: center;padding: 8px;}</style></head><body><form action=\"/config.html\" method=\"post\"><center><table><tr><th colspan=\"2\"><center>Access Point</center></th></tr><tr><td>AP SSID:</td><td><input name=\"ap_ssid\" value=\"" + AP_SSID + "\"></td></tr><tr><td>AP PASSWORD:</td><td><input name=\"ap_pass\" value=\"********\"></td></tr><tr><td>AP IP:</td><td><input name=\"web_ip\" value=\"" + Server_IP.toString() + "\"></td></tr><tr><td>SUBNET MASK:</td><td><input name=\"subnet\" value=\"" + Subnet_Mask.toString() + "\"></td></tr><tr><td>START AP:</td><td><input type=\"checkbox\" name=\"useap\" " + tmpUa +"></td></tr><tr><th colspan=\"2\"><center>Web Server</center></th></tr><tr><td>WEBSERVER PORT:</td><td><input name=\"web_port\" value=\"" + String(WEB_PORT) + "\"></td></tr><tr><th colspan=\"2\"><center>Wifi Connection</center></th></tr><tr><td>WIFI SSID:</td><td><input name=\"wifi_ssid\" value=\"" + WIFI_SSID + "\"></td></tr><tr><td>WIFI PASSWORD:</td><td><input name=\"wifi_pass\" value=\"********\"></td></tr><tr><td>WIFI HOSTNAME:</td><td><input name=\"wifi_host\" value=\"" + WIFI_HOSTNAME + "\"></td></tr><tr><td>CONNECT WIFI:</td><td><input type=\"checkbox\" name=\"usewifi\" " + tmpCw + "></tr><tr><th colspan=\"2\"><center>Auto USB Wait</center></th></tr><tr><td>WAIT TIME(ms):</td><td><input name=\"usbwait\" value=\"" + USB_WAIT + "\"></td></tr></table><br><input id=\"savecfg\" type=\"submit\" value=\"Save Config\"></center></form></body></html>";
   request->send(200, "text/html", htmStr);
 }
 
-
-void handleUpdateHtml(AsyncWebServerRequest *request)
-{
-  String htmStr = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Firmware Update</title><style type=\"text/css\">#loader {  z-index: 1;  width: 50px;  height: 50px;  margin: 0 0 0 0;  border: 6px solid #f3f3f3;  border-radius: 50%;  border-top: 6px solid #3498db;  width: 50px;  height: 50px;  -webkit-animation: spin 2s linear infinite;  animation: spin 2s linear infinite;}@-webkit-keyframes spin {  0% { -webkit-transform: rotate(0deg); }  100% { -webkit-transform: rotate(360deg); }}@keyframes spin {  0% { transform: rotate(0deg); }  100% { transform: rotate(360deg); }}body {    background-color: #1451AE; color: #ffffff; font-size: 20px;  font-weight: bold;    margin: 0 0 0 0.0;    padding: 0.4em 0.4em 0.4em 0.6em;}  input[type=\"submit\"]:hover {     background: #ffffff;    color: green; }input[type=\"submit\"]:active {     outline-color: green;    color: green;    background: #ffffff; }input[type=\"button\"]:hover {     background: #ffffff;    color: #000000; }input[type=\"button\"]:active {     outline-color: #000000;    color: #000000;    background: #ffffff; }#selfile {  font-size: 16px;  font-weight: normal;}#status {  font-size: 16px;  font-weight: normal;}</style><script>function formatBytes(bytes) {  if(bytes == 0) return '0 Bytes';  var k = 1024,  dm = 2,  sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],  i = Math.floor(Math.log(bytes) / Math.log(k));  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];}function statusUpl() {  document.getElementById(\"upload\").style.display=\"none\";  document.getElementById(\"btnsel\").style.display=\"none\";  document.getElementById(\"status\").innerHTML = \"<div id='loader'></div><br>Uploading firmware file...\";  setTimeout(statusUpd, 5000);}function statusUpd() {  document.getElementById(\"status\").innerHTML = \"<div id='loader'></div><br>Updating firmware, Please wait.\";}function FileSelected(e){  file = document.getElementById('fwfile').files[document.getElementById('fwfile').files.length - 1];  if (file.name.toLowerCase() == \"fwupdate.bin\")  {  var b = file.slice(0, 1);  var r = new FileReader();  r.onloadend = function(e) {  if (e.target.readyState === FileReader.DONE) {  var mb = new Uint8Array(e.target.result);   if (parseInt(mb[0]) == 233)  {  document.getElementById(\"selfile\").innerHTML =  \"File: \" + file.name + \"<br>Size: \" + formatBytes(file.size) + \"<br>Magic byte: 0x\" + parseInt(mb[0]).toString(16).toUpperCase();   document.getElementById(\"upload\").style.display=\"block\"; } else  {  document.getElementById(\"selfile\").innerHTML =  \"<font color='#df3840'><b>Invalid firmware file</b></font><br><br>Magic byte is wrong<br>Expected: 0xE9<br>Found: 0x\" + parseInt(mb[0]).toString(16).toUpperCase();     document.getElementById(\"upload\").style.display=\"none\";  }    }    };    r.readAsArrayBuffer(b);  }  else  {    document.getElementById(\"selfile\").innerHTML =  \"<font color='#df3840'><b>Invalid firmware file</b></font><br><br>File should be fwupdate.bin\";    document.getElementById(\"upload\").style.display=\"none\";  }}</script></head><body><center><form action=\"/update.html\" enctype=\"multipart/form-data\" method=\"post\"><p>Firmware Updater<br><br></p><p><input id=\"btnsel\" type=\"button\" onclick=\"document.getElementById('fwfile').click()\" value=\"Select file\" style=\"display: block;\"><p id=\"selfile\"></p><input id=\"fwfile\" type=\"file\" name=\"fwupdate\" size=\"0\" accept=\".bin\" onChange=\"FileSelected();\" style=\"width:0; height:0;\"></p><div><p id=\"status\"></p><input id=\"upload\" type=\"submit\" value=\"Update Firmware\" onClick=\"statusUpl();\" style=\"display: none;\"></div></form><center></body></html>";
-  request->send(200, "text/html", htmStr);
-}
-
-
-void handleUploadHtml(AsyncWebServerRequest *request)
-{
-  String htmStr = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>File Upload</title><style type=\"text/css\">#loader {  z-index: 1;  width: 50px;  height: 50px;  margin: 0 0 0 0;  border: 6px solid #f3f3f3;  border-radius: 50%;  border-top: 6px solid #3498db;  width: 50px;  height: 50px;  -webkit-animation: spin 2s linear infinite;  animation: spin 2s linear infinite;}@-webkit-keyframes spin {  0% { -webkit-transform: rotate(0deg); }  100% { -webkit-transform: rotate(360deg); }}@keyframes spin {  0% { transform: rotate(0deg); }  100% { transform: rotate(360deg); }}body {    background-color: #1451AE; color: #ffffff; font-size: 20px;  font-weight: bold;    margin: 0 0 0 0.0;    padding: 0.4em 0.4em 0.4em 0.6em;}  input[type=\"submit\"]:hover {     background: #ffffff;    color: green; }input[type=\"submit\"]:active {     outline-color: green;    color: green;    background: #ffffff;  } input[type=\"button\"]:hover {     background: #ffffff;    color: #000000; }input[type=\"button\"]:active {     outline-color: #000000;    color: #000000;    background: #ffffff; }#selfile {  font-size: 16px;  font-weight: normal;}#status {  font-size: 16px;  font-weight: normal;}</style><script>function formatBytes(bytes) {  if(bytes == 0) return '0 Bytes';  var k = 1024,  dm = 2,  sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],  i = Math.floor(Math.log(bytes) / Math.log(k));  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];}function statusUpl() {  document.getElementById(\"upload\").style.display=\"none\";  document.getElementById(\"btnsel\").style.display=\"none\";  document.getElementById(\"status\").innerHTML = \"<div id='loader'></div><br>Uploading files\";}function FileSelected(e){  var strdisp = \"\";  var file = document.getElementById(\"upfiles\").files;  for (var i = 0; i < file.length; i++)  {   strdisp = strdisp + file[i].name + \" - \" + formatBytes(file[i].size) + \"<br>\";  }  document.getElementById(\"selfile\").innerHTML = strdisp;  document.getElementById(\"upload\").style.display=\"block\";}</script></head><body><center><form action=\"/upload.html\" enctype=\"multipart/form-data\" method=\"post\"><p>File Uploader<br><br></p><p><input id=\"btnsel\" type=\"button\" onclick=\"document.getElementById('upfiles').click()\" value=\"Select files\" style=\"display: block;\"><p id=\"selfile\"></p><input id=\"upfiles\" type=\"file\" name=\"fwupdate\" size=\"0\" onChange=\"FileSelected();\" style=\"width:0; height:0;\" multiple></p><div><p id=\"status\"></p><input id=\"upload\" type=\"submit\" value=\"Upload Files\" onClick=\"statusUpl();\" style=\"display: none;\"></div></form><center></body></html>";
-  request->send(200, "text/html", htmStr);
-}
 
 
 void handleFileUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
@@ -343,13 +390,6 @@ void handleFileUpload(AsyncWebServerRequest *request, String filename, size_t in
 }
 
 
-void handleAdminHtml(AsyncWebServerRequest *request)
-{
-  String htmStr = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Admin Panel</title><style>body {    background-color: #1451AE; color: #ffffff; font-size: 14px;  font-weight: bold;    margin: 0 0 0 0.0;    padding: 0.4em 0.4em 0.4em 0.6em;}.sidenav {    width: 140px;    position: fixed;    z-index: 1;    top: 20px;    left: 10px;    background: #6495ED;    overflow-x: hidden;    padding: 8px 0;}.sidenav a {    padding: 6px 8px 6px 16px;    text-decoration: none;    font-size: 14px;    color: #ffffff;    display: block;}.sidenav a:hover {    color: #1451AE;}.main {    margin-left: 150px;     padding: 10px 10px; position: absolute;   top: 0;   right: 0; bottom: 0;  left: 0;}</style></head><body><div class=\"sidenav\"><a href=\"/index.html\" target=\"mframe\">Main Page</a><a href=\"/info.html\" target=\"mframe\">ESP Information</a><a href=\"/fileman.html\" target=\"mframe\">File Manager</a><a href=\"/upload.html\" target=\"mframe\">File Uploader</a><a href=\"/update.html\" target=\"mframe\">Firmware Update</a><a href=\"/config.html\" target=\"mframe\">Config Editor</a><a href=\"/reboot.html\" target=\"mframe\">Reboot ESP</a></div><div class=\"main\"><iframe src=\"info.html\" name=\"mframe\" height=\"100%\" width=\"100%\" frameborder=\"0\"></iframe></div></table></body></html> ";
-  request->send(200, "text/html", htmStr);
-}
-
-
 void handleConsoleUpdate(String rgn, AsyncWebServerRequest *request)
 {
   String Version = "05.050.000";
@@ -359,13 +399,6 @@ void handleConsoleUpdate(String rgn, AsyncWebServerRequest *request)
   String imgPath = "";
   String xmlStr = "<?xml version=\"1.0\" ?><update_data_list><region id=\"" + rgn + "\"><force_update><system level0_system_ex_version=\"0\" level0_system_version=\"" + Version + "\" level1_system_ex_version=\"0\" level1_system_version=\"" + Version + "\"/></force_update><system_pup ex_version=\"0\" label=\"" + lblVersion + "\" sdk_version=\"" + sVersion + "\" version=\"" + Version + "\"><update_data update_type=\"full\"><image size=\"" + imgSize + "\">" + imgPath + "</image></update_data></system_pup><recovery_pup type=\"default\"><system_pup ex_version=\"0\" label=\"" + lblVersion + "\" sdk_version=\"" + sVersion + "\" version=\"" + Version + "\"/><image size=\"" + imgSize + "\">" + imgPath + "</image></recovery_pup></region></update_data_list>";
   request->send(200, "text/xml", xmlStr);
-}
-
-
-void handleRebootHtml(AsyncWebServerRequest *request)
-{
-  String htmStr = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>ESP Reboot</title><style type=\"text/css\">#loader {  z-index: 1;   width: 50px;   height: 50px;   margin: 0 0 0 0;   border: 6px solid #f3f3f3;   border-radius: 50%;   border-top: 6px solid #3498db;   width: 50px;   height: 50px;   -webkit-animation: spin 2s linear infinite;   animation: spin 2s linear infinite; } @-webkit-keyframes spin {  0%  {  -webkit-transform: rotate(0deg);  }  100% {  -webkit-transform: rotate(360deg); }}@keyframes spin {  0% { transform: rotate(0deg); }  100% { transform: rotate(360deg); }} body { background-color: #1451AE; color: #ffffff; font-size: 20px; font-weight: bold; margin: 0 0 0 0.0; padding: 0.4em 0.4em 0.4em 0.6em;}   input[type=\"submit\"]:hover { background: #ffffff; color: green; }input[type=\"submit\"]:active { outline-color: green; color: green; background: #ffffff; } #msgfmt { font-size: 16px; font-weight: normal;}#status { font-size: 16px;  font-weight: normal;} </style><script>function statusRbt() { var answer = confirm(\"Are you sure you want to reboot?\");  if (answer) {document.getElementById(\"reboot\").style.display=\"none\";   document.getElementById(\"status\").innerHTML = \"<div id='loader'></div><br>Rebooting ESP Board\"; return true;  }else {   return false;  }}</script></head><body><center><form action=\"/reboot.html\" method=\"post\"><p>ESP Reboot<br><br></p><p id=\"msgrbt\">This will reboot the esp board</p><div><p id=\"status\"></p><input id=\"reboot\" type=\"submit\" value=\"Reboot ESP\" onClick=\"return statusRbt();\" style=\"display: block;\"></div></form><center></body></html>";
-  request->send(200, "text/html", htmStr);
 }
 
 
@@ -379,23 +412,33 @@ void handleInfo(AsyncWebServerRequest *request)
   output += "SDK version: " + String(ESP.getSdkVersion()) + "<br>";
   output += "Chip Id: " + String(ESP.getChipModel()) + "<br><hr>";
   output += "###### CPU ######<br><br>";
-  output += "CPU frequency: " + String(ESP.getCpuFreqMHz()) + "MHz<br><hr>";
+  output += "CPU frequency: " + String(ESP.getCpuFreqMHz()) + "MHz<br>";
+  output += "Cores: " + String(ESP.getChipCores()) + "<br><hr>";
   output += "###### Flash chip information ######<br><br>";
   output += "Flash chip Id: " +  String(ESP.getFlashChipMode()) + "<br>";
   output += "Estimated Flash size: " + formatBytes(ESP.getFlashChipSize()) + "<br>";
   output += "Flash frequency: " + String(flashFreq) + " MHz<br>";
   output += "Flash write mode: " + String((ideMode == FM_QIO ? "QIO" : ideMode == FM_QOUT ? "QOUT" : ideMode == FM_DIO ? "DIO" : ideMode == FM_DOUT ? "DOUT" : "UNKNOWN")) + "<br><hr>";
+  output += "###### Storage information ######<br><br>";
+  output += "Filesystem: SPIFFS<br>";
+  output += "Total Size: " + formatBytes(SPIFFS.totalBytes()) + "<br>";
+  output += "Used Space: " + formatBytes(SPIFFS.usedBytes()) + "<br>";
+  output += "Free Space: " + formatBytes(SPIFFS.totalBytes() - SPIFFS.usedBytes()) + "<br><hr>";
+  output += "###### Ram information ######<br><br>";
+  output += "Ram size: " + formatBytes(ESP.getHeapSize()) + "<br>";
+  output += "Free ram: " + formatBytes(ESP.getFreeHeap()) + "<br>";
+  output += "Max alloc ram: " + formatBytes(ESP.getMaxAllocHeap()) + "<br><hr>";
   output += "###### Sketch information ######<br><br>";
   output += "Sketch hash: " + ESP.getSketchMD5() + "<br>";
   output += "Sketch size: " +  formatBytes(ESP.getSketchSize()) + "<br>";
-  output += "Free space available: " +  formatBytes(ESP.getFreeSketchSpace()) + "<br><hr>";
+  output += "Free space available: " +  formatBytes(ESP.getFreeSketchSpace() - ESP.getSketchSize()) + "<br><hr>";
   output += "</html>";
   request->send(200, "text/html", output);
 }
 
 
 void handleCacheManifest(AsyncWebServerRequest *request) {
-  #if !AUTOUSB
+  #if !USBCONTROL
   String output = "CACHE MANIFEST\r\n";
   File dir = SPIFFS.open("/");
   File file = dir.openNextFile();
@@ -427,6 +470,13 @@ void handleCacheManifest(AsyncWebServerRequest *request) {
   {
     output += "payloads.html\r\n";
   }
+  if(!instr(output,"style.css\r\n"))
+  {
+    output += "style.css\r\n";
+  }
+#if INTHEN
+  output += "gldhen.bin\r\n";
+#endif
    request->send(200, "text/cache-manifest", output);
   #else
    request->send(404);
@@ -434,12 +484,15 @@ void handleCacheManifest(AsyncWebServerRequest *request) {
 }
 
 
-
 void writeConfig()
 {
   File iniFile = SPIFFS.open("/config.ini", "w");
   if (iniFile) {
-  iniFile.print("\r\nSSID=" + AP_SSID + "\r\nPASSWORD=" + AP_PASS + "\r\n\r\nWEBSERVER_IP=" + Server_IP.toString() + "\r\n\r\nSUBNET_MASK=" + Subnet_Mask.toString() + "\r\n");
+  String tmpua = "false";
+  String tmpcw = "false";
+  if (startAP){tmpua = "true";}
+  if (connectWifi){tmpcw = "true";}
+  iniFile.print("\r\nAP_SSID=" + AP_SSID + "\r\nAP_PASS=" + AP_PASS + "\r\nWEBSERVER_IP=" + Server_IP.toString() + "\r\nWEBSERVER_PORT=" + String(WEB_PORT) + "\r\nSUBNET_MASK=" + Subnet_Mask.toString() + "\r\nWIFI_SSID=" + WIFI_SSID + "\r\nWIFI_PASS=" + WIFI_PASS + "\r\nWIFI_HOST=" + WIFI_HOSTNAME + "\r\nUSEAP=" + tmpua + "\r\nCONWIFI=" + tmpcw + "\r\nUSBWAIT=" + USB_WAIT + "\r\n");
   iniFile.close();
   }
 }
@@ -486,7 +539,59 @@ void setup(){
     strsIp.trim();
     Subnet_Mask.fromString(strsIp);
    }
+   
+   if(instr(iniData,"WIFI_SSID="))
+   {
+   WIFI_SSID = split(iniData,"WIFI_SSID=","\r\n");
+   WIFI_SSID.trim();
+   }
+   
+   if(instr(iniData,"WIFI_PASS="))
+   {
+   WIFI_PASS = split(iniData,"WIFI_PASS=","\r\n");
+   WIFI_PASS.trim();
+   }
+
+   if(instr(iniData,"WIFI_HOST="))
+   {
+   WIFI_HOSTNAME = split(iniData,"WIFI_HOST=","\r\n");
+   WIFI_HOSTNAME.trim();
+   }
+
+   if(instr(iniData,"USEAP="))
+   {
+    String strua = split(iniData,"USEAP=","\r\n");
+    strua.trim();
+    if (strua.equals("true"))
+    {
+      startAP = true;
     }
+    else
+    {
+      startAP = false;
+    }
+   }
+
+   if(instr(iniData,"CONWIFI="))
+   {
+    String strcw = split(iniData,"CONWIFI=","\r\n");
+    strcw.trim();
+    if (strcw.equals("true"))
+    {
+      connectWifi = true;
+    }
+    else
+    {
+      connectWifi = false;
+    }
+   }
+   if(instr(iniData,"USBWAIT="))
+   {
+    String strusw = split(iniData,"USBWAIT=","\r\n");
+    strusw.trim();
+    USB_WAIT = strusw.toInt();
+   }
+   }
   }
   else
   {
@@ -495,19 +600,60 @@ void setup(){
   }
   else
   {
-    //Serial.println("No SPIFFS");
+    //HWSerial.println("SPIFFS failed to mount");
   }
 
 
-  WiFi.mode(WIFI_AP);
-  WiFi.softAPConfig(Server_IP, Server_IP, Subnet_Mask);
-  WiFi.softAP(AP_SSID.c_str(), AP_PASS.c_str());
-  //Serial.println("WIFI AP started");
+  if (startAP)
+  {
+    //HWSerial.println("SSID: " + AP_SSID);
+    //HWSerial.println("Password: " + AP_PASS);
+    //HWSerial.println("");
+    //HWSerial.println("WEB Server IP: " + Server_IP.toString());
+    //HWSerial.println("Subnet: " + Subnet_Mask.toString());
+    //HWSerial.println("WEB Server Port: " + String(WEB_PORT));
+    //HWSerial.println("");
+    WiFi.softAPConfig(Server_IP, Server_IP, Subnet_Mask);
+    WiFi.softAP(AP_SSID.c_str(), AP_PASS.c_str());
+    //HWSerial.println("WIFI AP started");
+    dnsServer.setTTL(30);
+    dnsServer.setErrorReplyCode(DNSReplyCode::ServerFailure);
+    dnsServer.start(53, "*", Server_IP);
+    //HWSerial.println("DNS server started");
+    //HWSerial.println("DNS Server IP: " + Server_IP.toString());
+  }
 
-  dnsServer.setTTL(30);
-  dnsServer.setErrorReplyCode(DNSReplyCode::ServerFailure);
-  dnsServer.start(53, "*", Server_IP);
-  //Serial.println("DNS server started");
+  if (connectWifi && WIFI_SSID.length() > 0 && WIFI_PASS.length() > 0)
+  {
+    WiFi.setAutoConnect(true); 
+    WiFi.setAutoReconnect(true);
+    WiFi.hostname(WIFI_HOSTNAME);
+    WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
+    //HWSerial.println("WIFI connecting");
+    if (WiFi.waitForConnectResult() != WL_CONNECTED) {
+      //HWSerial.println("Wifi failed to connect");
+    } else {
+      IPAddress LAN_IP = WiFi.localIP(); 
+      if (LAN_IP)
+      {
+        //HWSerial.println("Wifi Connected");
+        //HWSerial.println("WEB Server LAN IP: " + LAN_IP.toString());
+        //HWSerial.println("WEB Server Port: " + String(WEB_PORT));
+        //HWSerial.println("WEB Server Hostname: " + WIFI_HOSTNAME);
+        String mdnsHost = WIFI_HOSTNAME;
+        mdnsHost.replace(".local","");
+        MDNS.begin(mdnsHost.c_str());
+        if (!startAP)
+        {
+          dnsServer.setTTL(30);
+          dnsServer.setErrorReplyCode(DNSReplyCode::ServerFailure);
+          dnsServer.start(53, "*", LAN_IP);
+          //HWSerial.println("DNS server started");
+          //HWSerial.println("DNS Server IP: " + LAN_IP.toString());
+        }
+      }
+    }
+  }
 
 
   server.on("/connecttest.txt", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -519,7 +665,7 @@ void setup(){
   });
 
   server.on("/upload.html", HTTP_GET, [](AsyncWebServerRequest *request){
-   handleUploadHtml(request);
+   request->send(200, "text/html", uploadData);
   });
 
    server.on("/upload.html", HTTP_POST, [](AsyncWebServerRequest *request){
@@ -543,11 +689,11 @@ void setup(){
   });
   
   server.on("/admin.html", HTTP_GET, [](AsyncWebServerRequest *request){
-   handleAdminHtml(request);
+   request->send(200, "text/html", adminData);
   });
   
   server.on("/reboot.html", HTTP_GET, [](AsyncWebServerRequest *request){
-   handleRebootHtml(request);
+   request->send(200, "text/html", rebootData);
   });
   
   server.on("/reboot.html", HTTP_POST, [](AsyncWebServerRequest *request){
@@ -555,7 +701,7 @@ void setup(){
   });
 
   server.on("/update.html", HTTP_GET, [](AsyncWebServerRequest *request){
-     handleUpdateHtml(request);
+     request->send(200, "text/html", updateData);
   });
 
    server.on("/update.html", HTTP_POST, [](AsyncWebServerRequest *request){
@@ -563,6 +709,10 @@ void setup(){
 
   server.on("/info.html", HTTP_GET, [](AsyncWebServerRequest *request){
      handleInfo(request);
+  });
+
+  server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *request){
+   request->send(200, "text/css", styleData);
   });
 
   server.on("/usbon", HTTP_POST, [](AsyncWebServerRequest *request){
@@ -575,19 +725,30 @@ void setup(){
      request->send(200, "text/plain", "ok");
   });
 
+#if INTHEN
+  server.on("/gldhen.bin", HTTP_GET, [](AsyncWebServerRequest *request){
+   AsyncWebServerResponse *response = request->beginResponse_P(200, "application/octet-stream", goldhen_gz, sizeof(goldhen_gz));
+   response->addHeader("Content-Encoding", "gzip");
+   request->send(response);
+  });
+#endif
 
   server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
 
   server.onNotFound([](AsyncWebServerRequest *request){
-    //Serial.println(request->url());
-    String path = request->url();
-    if (instr(path,"/update/ps4/"))
-    {
+     //Serial.println(request->url());
+     String path = request->url();
+     if (instr(path,"/update/ps4/"))
+     {
         String Region = split(path,"/update/ps4/list/","/");
         handleConsoleUpdate(Region, request);
         return;
-    }
-
+     }
+     if (instr(path,"/document/") && instr(path,"/ps4/"))
+     {
+        request->redirect("http://" + WIFI_HOSTNAME + "/index.html");
+        return;
+     }
      if (path.endsWith("index.html") || path.endsWith("index.htm") || path.endsWith("/"))
      {
         request->send(200, "text/html", indexData);
@@ -600,37 +761,20 @@ void setup(){
      }
      if (path.endsWith("payloads.html"))
      {
-        handlePayloads(request);
+        #if INTHEN && AUTOHEN
+          request->send(200, "text/html", autohenData);
+        #else
+          handlePayloads(request);
+        #endif
         return;
      }
      if (path.endsWith("loader.html"))
      {
-        request->send(200, "text/html", loaderData);
+        AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", loader_gz, sizeof(loader_gz));
+        response->addHeader("Content-Encoding", "gzip");
+        request->send(response);
         return;
      }
-     if (path.endsWith("usbon"))
-     {
-        enableUSB();
-        request->send(200, "text/plain", "ok");
-        return;
-     }
-     if (path.endsWith("usboff"))
-     {
-        disableUSB();
-        request->send(200, "text/plain", "ok");
-        return;
-     }
-      if (instr(path,"/document/") && instr(path,"/ps4/"))
-      {
-        path.replace("/document/" + split(path,"/document/","/ps4/") + "/ps4/", "/");
-        if (path.endsWith("cache.manifest"))
-        {
-          handleCacheManifest(request);
-          return;
-        }
-          request->send(SPIFFS, path, getContentType(path));
-        return;
-      }
     request->send(404);
   });
 
